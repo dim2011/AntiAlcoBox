@@ -1,0 +1,34 @@
+//AntiAlkoBox FREE  - ATMega328+OLED+3KEY + timer1302 + Servo 
+//Программа для пошаговой сборки и тестирования, питание через USB.
+//Test1 OLED экран
+//Arduino PIN/OLED PIN: A0/SDA; A1/SCL; +5V/+5V; GND/GND;
+//При правильном подключении экрана на нем будет выводиться последовательный отсчет цифр
+//в любом случае будет мигать светодиод на плате.
+
+#include <OLED_I2C.h>  //Библиотека в стандартные не входит, устанавливаете самостоятельно
+OLED  myOLED(A0, A1, 8);    // A0-SDA; A1-SCL;
+extern uint8_t MegaNumbers[]; 
+extern uint8_t SmallFont[];  
+extern uint8_t MediumNumbers[];
+int c=0;
+
+void setup(){
+  myOLED.begin();
+  pinMode(13, OUTPUT);
+}
+void loop() {
+  myOLED.clrScr();
+  
+  myOLED.setFont(SmallFont);
+  myOLED.print("Test OLED.", 0, 17);
+  
+  myOLED.setFont(MegaNumbers);
+  myOLED.print(String(c), 5, 28);
+    
+  myOLED.update();
+  digitalWrite(13,HIGH);
+  delay(500); 
+  c++;
+  digitalWrite(13,LOW);
+  delay(500); 
+}

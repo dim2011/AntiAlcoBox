@@ -1,0 +1,86 @@
+//AntiAlkoBox FREE  - ATMega328+OLED+3KEY + timer1302 + Servo 
+//Программа для пошаговой сборки и тестирования, ПИТАНИЕ от батарей 6 вольт.
+//Test5 SERVO + TRANSISTOR;
+//Arduino PIN/OLED PIN: A0/SDA; A1/SCL; +5V/+5V; GND/GND;
+//Arduino PIN/KEYS PIN: A2/3Resister KEYS Pin; A3/ResetKey Pin;
+//Arduino PIN/TIMER PIN: D6/RST; D7/CLK; D8/DAT; +5V/+5V; GND/GND;
+//Arduino PIN/Servo PIN: A5/Servo; +6V от батарей (через выключатель и конденсатор)/+V Servo; Transistor Collector/GND;
+//Arduino PIN/Transistor PIN: D3/Base (средний контакт) через резистор 1kOm; GND Arduino/Emitter (левый, если транзистор плоской стороной к себе); GND Servo/Collector (правый);
+//При правильном подключении кнопками Up/Down серво будет переведен в крайние положения; кнопка Enter устанавливает его в 90 градусов.
+//Если этого не происходит для предлагаемого транзистора проверьте правильность подключения контактов Emitter/Collector.
+//Для установки ваших значений нажатия кнопок получите из теста2 значения чисел соответствующих кнопок Up, Down, Enter.
+//расчитайте для этих кнопок значения минимума и максимума интервала для программы, которое не должно пересекаться с интервалом других кнопок и минимальным значением (без нажатия).
+//Например, значение без нажатия пусть будет равно 241, для нажатой кнопки Up 71, Down 119, Enter 164; Примем примерное значение интервала за 20 
+//Тогда для кнопки Up ее минимальное значени keyUpVal_min будет 50 (округляя 71 - 20), а максимальное keyUpVal_max будет 90 ( округляя 71 + 20) и оно не будет пересекается с интервалом след. кнопки и т д.
+
+#include <OLED_I2C.h> 
+#include <iarduino_RTC.h>
+#include <Servo.h>
+
+#define  KEY_ALL A2 //Keys
+#define  MOTOR_PIN A5 //Servo
+#define  MOTOR_ON 3 //упавление транзистором сервомотора
+#define  KEY_RESET A3 //ResetKey
+
+OLED  myOLED(A0, A1, 8); //SDA, SCL 
+extern uint8_t MegaNumbers[]; 
+extern uint8_t SmallFont[];  
+extern uint8_t MediumNumbers[];
+iarduino_RTC time(RTC_DS1302, 6, 7, 8); // RST,CLK,DAT 
+Servo myservo;
+//--- расчитайте интервал по данным из теста2 и установите свои значения минимума и максимума для кнопок -----
+//----calculate and set the interval values for the buttons from the numbers obtained in the test2 -----
+byte keyUpVal_min=50, keyUpVal_max=90;
+byte keyDownVal_min=100, keyDownVal_max=135;
+byte keyEnterVal_min=140, keyEnterVal_max=180;
+//------------------------------------------------------------------------------------------------------
+byte keyReset, keyAll;
+extern uint8_t MegaNumbers[]; 
+extern uint8_t SmallFont[];  
+extern uint8_t MediumNumbers[];
+
+void setup(){
+  myOLED.begin();
+  pinMode(KEY_ALL, INPUT_PULLUP);
+  pinMode(KEY_RESET, INPUT_PULLUP);
+  pinMode(MOTOR_PIN, OUTPUT);
+  pinMode(MOTOR_ON, OUTPUT); digitalWrite (MOTOR_ON, LOW);
+}
+void loop() {
+  keyAll=analogRead(KEY_ALL);
+  if ((keyAll>keyUpVal_min) && (keyAll<keyUpVal_max))
+	{
+		digitalWrite (MOTOR_ON, HIGH); delay(100); 
+		myservo.attach(MOTOR_PIN); delay(100); 
+		myservo.write(0); delay(500); 
+		myservo.detach();delay(100);
+		digitalWrite (MOTOR_ON, LOW);
+	}
+  if ((keyAll>keyDownVal_min) && (keyAll<keyDownVal_max))
+  {
+		digitalWrite (MOTOR_ON, HIGH); delay(100); 
+		myservo.attach(MOTOR_PIN); delay(100); 
+		myservo.write(180); delay(500); 
+		myservo.detach();delay(100);
+		digitalWrite (MOTOR_ON, LOW);
+	}
+  if ((keyAll>keyEnterVal_min) && (keyAll<keyEnterVal_max))
+  {
+		digitalWrite (MOTOR_ON, HIGH); delay(100); 
+		myservo.attach(MOTOR_PIN); delay(100); 
+		myservo.write(90); delay(500); 
+		myservo.detach();delay(100);
+		digitalWrite (MOTOR_ON, LOW);
+	}
+  
+  myOLED.clrScr();
+  
+  myOLED.setFont(SmallFont);
+  myOLED.print("Test5 Servo+Transistor.", 0, 17);
+  myOLED.print(time.gettime("d-m-Y, H:i:s"),3, 0);
+  myOLED.print(String(keyAll),100, 30);  
+   
+  myOLED.update();
+  delay(500); 
+
+}

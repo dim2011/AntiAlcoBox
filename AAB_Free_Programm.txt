@@ -1,0 +1,332 @@
+/*
+AntiAlkoBox FREE  - ATMega328+OLED+3KEY+timer1302+Servo 
+Программа для Устройства самоограничения возможной опасной деятельности лиц, находящихся в состоянии опьянения.
+Copyright © 2016,2018 DJP
+Устройство представляет собой сейф, оборудованный замком с таймером обратного отсчета.
+Пользователь может установить период времени, на который сейф будет закрыт и положить туда "опасные" вещи перед употреблением алкоголя.
+При запуске, если таймер подключен и отсчет не ведется, на экран выводится время на таймере и установочный период.
+  С помощью кнопок Up/Down можно задать период времени, на который сейф будет закрыт.
+  С помощью кнопки Enter можно зарыть замок и запустить обратный отсчет.
+  На время отсчета на экране будет показано оставшееся кол-во времени.
+  По окончании отсчета будет выдано сообщение об этом и замок откроется.
+При запуске, если отсчет ведется, будет показано оставшееся время.
+Если произойдет ошибка таймера, то замок откроется и будет выдано соответствующее сообщение. Проверьте подключение таймера и его батарейку. 
+*/
+#include <iarduino_RTC.h>
+#include <OLED_I2C.h> 
+#include <Servo.h>
+#include <EEPROM.h>
+
+#define  KEY_ALL A2 //Keys
+#define  MOTOR_PIN A5 //Servo
+#define  MOTOR_ON 3 //Transistor open
+#define  KEY_RESET A3 //Key reset timer
+
+OLED  myOLED(A0, A1, 8);//SDA, SCL 
+extern uint8_t MegaNumbers[]; 
+extern uint8_t SmallFont[];  
+extern uint8_t MediumNumbers[];
+iarduino_RTC time(RTC_DS1302, 6, 7, 8);//RST,CLK,DAT 
+Servo myservo;
+
+//-user set val------------
+byte demoMode=0;//демо-режим 1-вкл/0-выкл
+int demoTime=15; // длительность отсчета при демо-режиме (sec)
+//значения min/max периода при нажатии кнопок (см. Тест2)
+byte keyUpVal_min=50, keyUpVal_max=90;//Up key
+byte keyDownVal_min=100, keyDownVal_max=135;//Down key
+byte keyEnterVal_min=140, keyEnterVal_max=180;//Enter key
+byte minPer=5, maxPer=12; //min, max значения для периода(hours)
+byte perGrade=15; //шаг задания периода(min)
+byte servoMIn=40, servoMAx=140;//min/max угол закрытия/открытия замка (см. Тест4)
+//---------------------------
+byte startYear, startMonth, startDay, startHour, startMin, startSec; 
+byte periodHour=0, periodMin=0, periodSec=0;// указанное пользователем время периода в часах и минутах
+long digitNum=minPer*60; //отображаемая длительность в минутах
+byte countDown=4; //countdown sec
+byte keyReset, doStatus=0, keyAll;
+unsigned long delay1, delay2, delay3;
+long timeShNow;
+byte ErrNum=0; // код ошибки
+//----------------------------------------------------------------------------------------------------
+void setup(){
+  myOLED.begin();
+  time.begin();
+  pinMode(KEY_ALL, INPUT_PULLUP);
+  pinMode(KEY_RESET, INPUT_PULLUP); 
+  pinMode(MOTOR_PIN, OUTPUT); 
+  pinMode(MOTOR_ON, OUTPUT); digitalWrite (MOTOR_ON, LOW);
+//-------------------------------------------------------------------------------
+  EEPROM_Test(); 
+  if (TIMER_Test()==0){
+    EEPROM_Time_Read(); 
+    timeShNow=getPeriod();
+    if (timeShNow<0){doStatus=99;}
+    if (timeShNow==0){doStatus=0; ZAMOK(0);} else {doStatus=3; ZAMOK(1);digitNum=timeShNow; delay2 = 0;}
+  } else {doStatus=99;ZAMOK(0);}
+//----------------------------------
+  SHOW_TEXT(doStatus, digitNum);
+} 
+void loop() {
+  keyAll=analogRead(KEY_ALL);
+  keyReset=digitalRead(KEY_RESET); 
+  if (keyReset==0){
+    doStatus=0;
+    ZAMOK(0);
+    countDown=4;
+    EEPROM_Time_Clear();
+    digitNum=minPer*60;
+    SHOW_TEXT(doStatus, digitNum);
+  }
+  if (doStatus==0){SET_PERIOD();} // установить длительность закрытия
+  if (doStatus==1){COUNTDOWN();} // обратный отсчет
+  if (doStatus==3){DO_TIME();} // отсчет времени - нельзя отменить
+  if (doStatus==4){DO_END();} // отсчет закончен 
+  if (doStatus==5){DO_WAIT_OPEN();} // ждем открытия ящика
+  if (doStatus==99){ERROR_END(ErrNum);} // ошибка
+}
+void SET_PERIOD(){//0 устанавливаем значение длительности закрытия
+
+  if ((keyAll>keyUpVal_min) && (keyAll<keyUpVal_max)) {
+    digitNum=digitNum+perGrade; 
+    if (digitNum>maxPer*60){digitNum=maxPer*60;}
+    SHOW_TEXT(doStatus, digitNum);
+  }
+  if ((keyAll>keyDownVal_min) && (keyAll<keyDownVal_max)) {
+    digitNum=digitNum-perGrade;
+    if (digitNum<minPer*60){digitNum=minPer*60;}
+    SHOW_TEXT(doStatus, digitNum);
+  }
+  if ((keyAll>keyEnterVal_min) && (keyAll<keyEnterVal_max)){doStatus=1; keyAll=0; delay(200);}
+  delay(200);
+}
+void COUNTDOWN(){
+  if (countDown>0){
+    if ((keyAll<180) && (keyAll>50)) {keyAll=0; doStatus=0; delay(500); ZAMOK(0); countDown=4; SHOW_TEXT(doStatus, digitNum); return;}
+    if (millis()>delay1) {countDown--; delay1 = millis()+800;}
+    SHOW_TEXT(1, countDown);
+  }
+  else {
+    doStatus=3; ZAMOK(1);
+    time.gettime();
+    startYear=time.year; 
+    startMonth=time.month;
+    startDay=time.day;
+    startHour=time.Hours; 
+    startMin=time.minutes; 
+    startSec=time.seconds;
+    if (TIMER_Test()!=0){doStatus=99;return;}
+  
+  if (demoMode==1){timeShNow=demoTime;} else {timeShNow=digitNum*60;}
+  
+  long temp1=0, temp2=0, temp3;
+  
+  temp1=timeShNow/3600; periodHour=temp1;
+  temp2=periodHour; temp2=temp2*3600; temp1=(timeShNow-temp2)/60; periodMin=temp1; 
+  temp3=periodMin; temp3=temp3*60; temp1=timeShNow-temp2-temp3; periodSec=temp1; 
+  
+  EEPROM_Time_Write(); delay2=0; delay3 = millis()+60000;
+  }
+}
+void DO_TIME(){// отсчет
+  if (millis()>delay3){
+     
+     timeShNow=getPeriod(); 
+     if (timeShNow<0){doStatus=99; return;}
+     delay3 = millis()+60000; 
+     delay2=0;
+  }
+  if (millis()>delay2){
+    timeShNow--;
+    if (timeShNow>0){
+      SHOW_TEXT(doStatus, timeShNow); 
+      delay2 = millis()+750;
+      }else{doStatus=4; digitNum=0; return;}
+  }
+}
+void DO_END() {// 4 отсчет закончен
+  ZAMOK(0);
+  countDown=4;
+  EEPROM_Time_Clear();//обнуляем таймер
+  doStatus=5;
+  digitNum=minPer*60;
+}
+void DO_WAIT_OPEN() {// 5 ждем открытия ящика
+  SHOW_TEXT(doStatus, 0);
+  if ((keyAll<180) && (keyAll>50)) {doStatus=0; keyAll=0; delay(500);}
+}
+void ERROR_END(byte ErrNum){//индикация ошибки
+  ZAMOK(0);
+  doStatus=99; SHOW_TEXT(99, 0);
+}
+void SHOW_TEXT(int textTip, long number){
+
+  myOLED.clrScr();
+  
+  if (textTip==0){
+    myOLED.setFont(SmallFont);
+    myOLED.print(F("SET PERIOD:"), 0, 17);
+    myOLED.print(time.gettime("d-m-Y, H:i:s"),3, 0);
+        
+    byte h1=number/60; byte m1=number-h1*60;
+    String h11 = String(number/60, DEC);
+    String m11 = String((number-h1*60), DEC);
+    
+    myOLED.setFont(MegaNumbers);
+    if (h1<10){h11="0"+h11;} myOLED.print(h11, 5, 28);
+    myOLED.print("/", 55, 28);
+    if (m1<10){m11="0"+m11;} myOLED.print(m11, 80, 28);
+  }
+  if (textTip==1){
+    myOLED.setFont(SmallFont); myOLED.print(F("COUNTDOWN:"), 0, 17);
+    String h11 = String(number, DEC);
+    myOLED.setFont(MegaNumbers); myOLED.print(h11, 100, 28);
+  }
+
+  if (textTip==3){
+    myOLED.setFont(SmallFont); myOLED.print(F("CLOSED UNTIL:"), 0, 17);
+ 
+    long Hour_=number/3600;
+    long Minute_=number; Minute_=(number-Hour_*3600)/60;
+    long Sec_=number; Sec_=(number-(Hour_*3600)-(Minute_*60));
+
+    String h11 = String(Hour_, DEC); if (Hour_<10){h11="0"+h11;}
+    String m11 = String(Minute_, DEC); if (Minute_<10){m11="0"+m11;}
+    String s11 = String(Sec_, DEC); if (Sec_<10){s11="0"+s11;}
+
+    myOLED.setFont(MegaNumbers);
+    if (Hour_>0)
+    {
+      myOLED.print(h11, 1, 28); myOLED.print("/", 50, 28); myOLED.print(m11, 70, 28); 
+      myOLED.setFont(SmallFont); myOLED.print(s11, 115, 20);
+    }
+    else{myOLED.print(m11, 1, 28); myOLED.print("/", 50, 28); myOLED.print(s11, 70, 28);}
+  }   
+  if (textTip==4){
+    myOLED.setFont(SmallFont); myOLED.print(F("COMPLETED."), 0, 17);
+    myOLED.setFont(MegaNumbers); myOLED.print("0", 80, 28);
+  }
+  if (textTip==5){
+    myOLED.setFont(SmallFont); myOLED.print(F("WAIT OPEN"), 0, 17);
+    myOLED.setFont(MegaNumbers); myOLED.print("00/00", 5, 28);
+  }
+
+  if (textTip==99){
+    myOLED.setFont(SmallFont); 
+    myOLED.print(F("TIMER ERR"), 0, 17);
+  }
+
+  myOLED.update();
+  delay(100);  
+}
+void ZAMOK(byte setMotor){// управление сервомотором
+  digitalWrite (MOTOR_ON, HIGH);delay(100);
+  myservo.attach(MOTOR_PIN); delay(100);
+  if(setMotor==0){myservo.write(servoMIn);} else {myservo.write(servoMAx);}
+  delay(500);
+  myservo.detach();delay(100);
+  digitalWrite (MOTOR_ON, LOW);
+}
+byte isYearBig(int testYear){ //Год является високосным?
+  
+  byte isYes4=0; byte isYes100=0; byte isYes400=0;
+
+  if ((testYear/4)*4==testYear){isYes4=1;}
+  if ((testYear/100)*100==testYear){isYes100=1;}
+  if ((testYear/400)*400==testYear){isYes400=1;}
+
+  if (isYes4==1 && isYes100==1 && isYes400==1) {return 1;}
+  if (isYes4==1 && isYes100==1 && isYes400==0) {return 0;}
+  if (isYes4==1 && isYes100==0) {return 1;}
+  if (isYes4==0) {return 0;}
+  return 0;
+}
+unsigned long timeToStamp(int y, byte m, byte d, byte h, byte n, byte s){  
+
+  unsigned long sec2018=1514764800;
+  unsigned long ts=0;
+  int c=0;
+  int m1[]={31,28,31,30,31,30,31,31,30,31,30,31};
+  long d1=d-1;
+  
+  for (c=2018; c<y; c++) { if (isYearBig(c)==1) {d1=d1+366;} else {d1=d1+365;}}
+  for (c=1; c < m; c++) { d1=d1+m1[c-1]; }
+  if  ((m>2) && (isYearBig(y)==1)) {d1++;}
+  long hh=h;
+  ts=ts+s+(n*60)+(hh*3600);
+  ts = ts+(d1*3600*24) ;
+  return ts;
+}
+long getPeriod(){//получить оставшееся время (sec) или 0
+
+  time.gettime();
+  byte nowYear=time.year; 
+  byte nowMonth=time.month;
+  byte nowDay=time.day;
+  byte nowHour=time.Hours;
+  byte nowMin=time.minutes;
+  byte nowSec=time.seconds;
+  if (TIMER_Test()!=0){return -1;}
+  
+  unsigned long startTime=timeToStamp(startYear, startMonth, startDay, startHour, startMin, startSec);
+  unsigned long nowTime=timeToStamp(nowYear, nowMonth, nowDay, nowHour, nowMin, nowSec);
+  long temp1=0, temp2=0;
+  temp1=periodHour; temp1=temp1*3600;
+  temp2=periodMin; temp2=temp2*60;
+  long getDiff=(temp1 + temp2 + periodSec) - (nowTime-startTime); 
+
+  if (getDiff < 0 ) {getDiff=0;}
+  return getDiff;
+}  
+byte EEPROM_Test(){ // проверка памяти контроллера
+  //читаем 1й байт, если он не 10101010 (170) то очищаем память и устанавливаем значения по умолчанию
+ byte testEEPROM=EEPROM.read(5); delay(50);
+ if  (testEEPROM!=170){EEPROM_SET(); delay(50); EEPROM.write(5, 170); return 1;} else {return 0;}
+}
+void EEPROM_SET(){// очистка памяти 
+  for (byte c=10; c<20; c++){EEPROM.write(c, 0); delay(50);}
+  time.settime(0,0,0,1,1,18);// год ставим 2018 
+  EEPROM.write(10, 18); delay(50);
+  EEPROM.write(11, 1); delay(50);
+  EEPROM.write(12, 1); delay(50); 
+}
+void EEPROM_Time_Clear(){ // очищаем значения в памяти
+  for (byte c=10; c<18; c++){EEPROM.write(c, 0); delay(50);}
+  EEPROM.write(10, 18); delay(50);
+  EEPROM.write(11, 1); delay(50);
+  EEPROM.write(12, 1); delay(50);
+  time.settime(0,0,0,1,1,18);
+}
+void EEPROM_Time_Read(){ // считываем начальные данные при загрузке
+  startYear=EEPROM.read(10); delay(50);
+  startMonth=EEPROM.read(11); delay(50);
+  startDay=EEPROM.read(12); delay(50);
+  startHour=EEPROM.read(13); delay(50); 
+  startMin=EEPROM.read(14); delay(50);
+  startSec=EEPROM.read(15); delay(50);
+  periodHour=EEPROM.read(16); delay(50);
+  periodMin=EEPROM.read(17); delay(50);
+  periodSec=EEPROM.read(18); delay(50);
+}
+void EEPROM_Time_Write(){ // записываем в память данные о периоде
+  EEPROM.write(10, startYear); delay(50);
+  EEPROM.write(11, startMonth); delay(50);
+  EEPROM.write(12, startDay); delay(50);
+  EEPROM.write(13, startHour); delay(50);
+  EEPROM.write(14, startMin); delay(50);
+  EEPROM.write(15, startSec); delay(50);
+  EEPROM.write(16, periodHour); delay(50);
+  EEPROM.write(17, periodMin); delay(50);
+  EEPROM.write(18, periodSec); delay(50);
+}
+byte TIMER_Test(){//проверяем, что таймер работает
+  time.gettime();
+  if ((time.month>12) && (time.month<1)){return 1;}
+  if ((time.day>31) && (time.day<1)){return 1;}
+  if ((time.Hours>23) && (time.Hours<0)){return 1;}
+  if ((time.minutes>59) && (time.minutes<0)){return 1;}
+  if ((time.seconds>59) && (time.seconds<0)){return 1;}
+  if ((time.year)<18){time.settime(0,0,0,1,1,18); return 1;}
+  return 0;
+}
+

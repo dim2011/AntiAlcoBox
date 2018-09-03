@@ -1,0 +1,43 @@
+//AntiAlkoBox FREE  - ATMega328+OLED+3KEY + timer1302 + Servo 
+//Программа для пошаговой сборки и тестирования, питание через USB.
+//Test2 OLED+KEYS
+//Arduino PIN/OLED PIN: A0/SDA; A1/SCL; +5V/+5V; GND/GND;
+//Arduino PIN/KEYS PIN: A2/3Resister KEYS Pin; A3/ResetKey Pin;
+//Каждая кнопка подключается через резистор 2kOm последовательно (см. иллюстрацию), т.е. 1я=2kOm, 2я=2+2, 3я=2+2+2kOm
+//При правильном подключении экрана и кнопок на экране будет выводиться число, соответсвующее нажатию на конкретную кнопку управления или символы "0:0", в случае нажатия на кнопку сброса.
+//Число, соответствующее нажатию кнопки, а так же число, показываемое без нажатия необходимо запомнить, что бы использовать эти данные в основной программе.
+//В программе принято, что минимальное значение соответсвует кнопке Up при ее нажатии, среднее кнопке Down, а максимальное кнопке Enter.
+
+#include <OLED_I2C.h> 
+
+#define  KEY_ALL A2 //Keys: Up, Down, Enter 
+#define  KEY_RESET A3 //Key reset
+
+OLED  myOLED(A0, A1, 8);    // A0-SDA; A1-SCL;
+ 
+byte keyReset, keyAll;
+extern uint8_t MegaNumbers[]; 
+extern uint8_t SmallFont[];  
+extern uint8_t MediumNumbers[];
+
+void setup(){
+  myOLED.begin();
+  pinMode(KEY_ALL, INPUT_PULLUP);
+  pinMode(KEY_RESET, INPUT_PULLUP);
+}
+void loop() {
+  keyAll=analogRead(KEY_ALL);
+  keyReset=digitalRead(KEY_RESET); 
+  
+  myOLED.clrScr();
+  
+  myOLED.setFont(SmallFont);
+  myOLED.print("Test OLED & Keys.", 0, 17);
+  
+  myOLED.setFont(MegaNumbers);
+  if (keyReset==0){myOLED.print("0/0", 5, 28);} 
+  else {myOLED.print(String(keyAll), 5, 28);}
+    
+  myOLED.update();
+  delay(250); 
+}

@@ -1,0 +1,62 @@
+//AntiAlkoBox FREE  - ATMega328+OLED+3KEY + timer1302 + Servo 
+//Программа для пошаговой сборки и тестирования, питание через USB.
+//Test4 SERVO (NO TRANSISTOR)
+//Arduino PIN/OLED PIN: A0/SDA; A1/SCL; +5V/+5V; GND/GND;
+//Arduino PIN/KEYS PIN: A2/3Resister KEYS Pin; A3/ResetKey Pin;
+//Arduino PIN/TIMER PIN: D6/RST; D7/CLK; D8/DAT; +5V/+5V; GND/GND;
+//Arduino PIN/Servo PIN: A5/Servo; +5V/+5V; GND/GND;
+//При правильном подключении экрана, кнопок и сервопривода при старте программы угол сервопривода будет установлен в 90 градусов,
+//на экране будет выводиться угол отклонения сервопривода и кнопками Up/Down его можно изменять на 5 градусов в ту или другую сторону; кнопка Enter устанавливает 90 градусов.
+//Запомните минимальные и максимальные значения угла закрытия/открытия вашего замка, они будут нужны в основной программе.
+//Для установки ваших значений нажатия кнопок получите из теста2 значения чисел соответствующих кнопок Up, Down, Enter
+//расчитайте для этих кнопок значения минимума и максимума интервала для программы, которое не должно пересекаться с интервалом других кнопок и минимальным значением (без нажатия).
+//Например, значение без нажатия пусть будет равно 241, для нажатой кнопки Up 71, Down 119, Enter 164; Примем примерное значение интервала за 20 
+//Тогда для кнопки Up ее минимальное значени keyUpVal_min будет 50 (округляя 71 - 20), а максимальное keyUpVal_max будет 90 ( округляя 71 + 20) и оно не будет пересекается с интервалом след. кнопки и т д.
+
+#include <OLED_I2C.h>
+#include <Servo.h>
+
+#define  KEY_ALL A2 //Key
+#define  KEY_RESET A3 //Key reset 
+#define  MOTOR_PIN A5 //Servo
+
+OLED  myOLED(A0, A1, 8);    // A0-SDA; A1-SCL;
+Servo myservo;
+
+//--- расчитайте интервал по данным из теста2 и установите свои значения минимума и максимума для кнопок -----
+//----calculate and set the interval values for the buttons from the numbers obtained in the test2 -----
+byte keyUpVal_min=50, keyUpVal_max=90;
+byte keyDownVal_min=100, keyDownVal_max=135;
+byte keyEnterVal_min=140, keyEnterVal_max=180;
+//------------------------------------------------------------------------------------------------------
+byte keyReset, keyAll, servoUgol;
+extern uint8_t MegaNumbers[]; 
+extern uint8_t SmallFont[];  
+extern uint8_t MediumNumbers[];
+
+void setup(){
+  myOLED.begin();
+  pinMode(KEY_ALL, INPUT_PULLUP);
+  pinMode(KEY_RESET, INPUT_PULLUP);
+  pinMode(MOTOR_PIN, OUTPUT);
+  myservo.attach(MOTOR_PIN); delay(100); 
+  servoUgol=90; myservo.write(servoUgol);delay(100);
+}
+void loop() {
+  keyAll=analogRead(KEY_ALL);
+
+  if ((keyAll>keyUpVal_min) && (keyAll<keyUpVal_max)) {servoUgol=servoUgol-5; if (servoUgol<0){servoUgol=0;} myservo.write(servoUgol);delay(100);}
+  if ((keyAll>keyDownVal_min) && (keyAll<keyDownVal_max)) {servoUgol=servoUgol+5; if (servoUgol>180){servoUgol=180;} myservo.write(servoUgol);delay(100);}
+  if ((keyAll>keyEnterVal_min) && (keyAll<keyEnterVal_max)) {servoUgol=90; myservo.write(servoUgol);delay(100);}
+  
+  myOLED.clrScr();
+  
+  myOLED.setFont(SmallFont);
+  myOLED.print("Test4 ServoNoTransistor.", 0, 17);
+  myOLED.print(String(keyAll),100, 30);  
+  myOLED.setFont(MegaNumbers);
+  myOLED.print(String(servoUgol), 5, 28);
+    
+  myOLED.update();
+  delay(500); 
+}
